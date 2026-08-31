@@ -1,6 +1,10 @@
 const { App } = require('@slack/bolt');
 require('dotenv').config();
 
+const { generateDailyDigest, checkForUrgentSignals } = require('./lib/competitive-intel');
+const { startDailyScheduler, runImmediately, getNextRunTime } = require('./lib/scheduler');
+const { competitors, schedule } = require('./config/competitors');
+
 const app = new App({
   token: process.env.SLACK_BOT_TOKEN,
   appToken: process.env.SLACK_APP_TOKEN,
@@ -8,6 +12,7 @@ const app = new App({
 });
 
 const brand = process.env.DEFAULT_BRAND || 'Client Brand';
+const COMPETITIVE_INTEL_CHANNEL = process.env.COMPETITIVE_INTEL_CHANNEL || schedule.channel;
 
 function sanitize(text = '') {
   return (text || '').replace(/<@[^>]+>/g, '').replace(/\s+/g, ' ').trim();
@@ -152,10 +157,69 @@ Mention the bot with a command + short scene description:
 • eleven – voice directions + script beats
 • bundle – all of the above + Canva checklist
 
+*Competitive Intelligence Commands:*
+• intel – run competitive intelligence scan now
+• competitors – list monitored competitors
+• intel-status – check next scheduled digest time
+
 Examples:
 @PromptBot bundle cozy home coffee ad at dawn
 @PromptBot ideogram robot barista serving latte, neon cyberpunk
-@PromptBot kling teacher welcoming students, first day of school`
+@PromptBot intel – run competitive scan immediately`
+  });
+}
+
+async function handleIntel({ say }) {
+  await say({ text: '🔍 Starting competitive intelligence scan... This may take a minute.' });
+  
+  try {
+    const result = await generateDailyDigest();
+    await say({ text: result.message });
+  } catch (err) {
+    await say({ text: `⚠️ Error running intel scan: ${err.message}` });
+  }
+}
+
+async function handleCompetitors({ say }) {
+  const tiers = competitors.tiers;
+  let text = '*📊 Monitored Competitors*\n\n';
+  
+  for (const [tierName, companies] of Object.entries(tiers)) {
+    text += `*${tierName}*\n`;
+    for (const company of companies) {
+      text += `• ${company.name} (${company.domain})\n`;
+    }
+    text += '\n';
+  }
+  
+  text += `_Total: ${competitors.getCompetitorNames().length} competitors monitored_`;
+  await say({ text });
+}
+
+async function handleIntelStatus({ say }) {
+  const nextRun = getNextRunTime();
+  const now = new Date();
+  const msUntil = nextRun.getTime() - now.getTime();
+  const daysUntil = Math.floor(msUntil / (1000 * 60 * 60 * 24));
+  const hoursUntil = Math.floor((msUntil % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutesUntil = Math.floor((msUntil % (1000 * 60 * 60)) / (1000 * 60));
+  
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const scheduleDesc = schedule.frequency === 'weekly' 
+    ? `Weekly on ${dayNames[schedule.dayOfWeek]}s at ${schedule.time} ${schedule.timezone}`
+    : `Daily at ${schedule.time} ${schedule.timezone}`;
+  
+  const timeUntil = daysUntil > 0 
+    ? `${daysUntil}d ${hoursUntil}h ${minutesUntil}m`
+    : `${hoursUntil}h ${minutesUntil}m`;
+  
+  await say({
+    text: `*📅 Competitive Intelligence Schedule*\n\n` +
+      `• Next digest: ${nextRun.toLocaleString('en-US', { timeZone: schedule.timezone })}\n` +
+      `• Time until next run: ${timeUntil}\n` +
+      `• Target channel: #${COMPETITIVE_INTEL_CHANNEL}\n` +
+      `• Competitors monitored: ${competitors.getCompetitorNames().length}\n` +
+      `• Schedule: ${scheduleDesc}`
   });
 }
 
@@ -164,7 +228,12 @@ const handlers = {
   'ideogram': handleIdeogram,
   'kling': handleKling,
   'eleven': handleEleven,
-  'help': handleHelp
+  'help': handleHelp,
+  'intel': handleIntel,
+  'competitors': handleCompetitors,
+  'intel-status': handleIntelStatus,
+  'intelstatus': handleIntelStatus,
+  'status': handleIntelStatus
 };
 
 app.event('app_mention', async ({ event, say }) => {
@@ -177,8 +246,67 @@ app.event('app_mention', async ({ event, say }) => {
   }
 });
 
+async function postDailyDigest() {
+  try {
+    const result = await generateDailyDigest();
+    
+    const channel = COMPETITIVE_INTEL_CHANNEL;
+    await app.client.chat.postMessage({
+      channel: channel,
+      text: result.message,
+      unfurl_links: false,
+      unfurl_media: false
+    });
+    
+    console.log(`[${new Date().toISOString()}] Posted daily digest to #${channel} (${result.signalCount} signals)`);
+    
+    if (result.signalCount === 0) {
+      console.log('No actionable signals found - digest posted with no-activity message');
+    }
+  } catch (err) {
+    console.error('Failed to post daily digest:', err);
+  }
+}
+
+async function checkAndPostUrgentSignals() {
+  try {
+    const urgentSignals = await checkForUrgentSignals();
+    
+    if (urgentSignals.length > 0) {
+      const channel = COMPETITIVE_INTEL_CHANNEL;
+      let message = '🚨 *URGENT Competitive Signal Detected*\n\n';
+      
+      for (const signal of urgentSignals.slice(0, 3)) {
+        message += `• *[${signal.company}]* — ${signal.title}\n  <${signal.url}|${signal.source}> | Tag: ${signal.tag.toUpperCase()}\n\n`;
+      }
+      
+      await app.client.chat.postMessage({
+        channel: channel,
+        text: message,
+        unfurl_links: false
+      });
+      
+      console.log(`Posted ${urgentSignals.length} urgent signals to #${channel}`);
+    }
+  } catch (err) {
+    console.error('Failed to check urgent signals:', err);
+  }
+}
+
 (async () => {
   await app.start();
   console.log('⚡ Prompt Bot is running (Socket Mode)');
+  
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const scheduleDesc = schedule.frequency === 'weekly' 
+    ? `Weekly on ${dayNames[schedule.dayOfWeek]}s at ${schedule.time} ${schedule.timezone}`
+    : `Daily at ${schedule.time} ${schedule.timezone}`;
+  
+  const schedulerInfo = startDailyScheduler(postDailyDigest);
+  console.log(`📊 Competitive Intelligence Agent active`);
+  console.log(`   Schedule: ${scheduleDesc}`);
+  console.log(`   Next digest: ${schedulerInfo.nextRun.toLocaleString()}`);
+  console.log(`   Channel: #${schedulerInfo.channel}`);
+  console.log(`   Monitoring ${competitors.getCompetitorNames().length} competitors`);
 })();
 
