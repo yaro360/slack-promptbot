@@ -142,9 +142,25 @@ const signalTags = [
   'acquisition'
 ];
 
+const industryKeywords = [
+  'marketing automation',
+  'email marketing',
+  'landing page',
+  'sales funnel',
+  'CRM software',
+  'SEO tool',
+  'lead generation',
+  'course platform',
+  'membership site',
+  'digital marketing',
+  'marketing platform',
+  'all-in-one marketing'
+];
+
 module.exports = {
   competitors,
   sources,
   schedule,
-  signalTags
+  signalTags,
+  industryKeywords
 };
