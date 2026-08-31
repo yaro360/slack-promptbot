@@ -200,16 +200,26 @@ async function handleIntelStatus({ say }) {
   const nextRun = getNextRunTime();
   const now = new Date();
   const msUntil = nextRun.getTime() - now.getTime();
-  const hoursUntil = Math.floor(msUntil / (1000 * 60 * 60));
+  const daysUntil = Math.floor(msUntil / (1000 * 60 * 60 * 24));
+  const hoursUntil = Math.floor((msUntil % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
   const minutesUntil = Math.floor((msUntil % (1000 * 60 * 60)) / (1000 * 60));
+  
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const scheduleDesc = schedule.frequency === 'weekly' 
+    ? `Weekly on ${dayNames[schedule.dayOfWeek]}s at ${schedule.time} ${schedule.timezone}`
+    : `Daily at ${schedule.time} ${schedule.timezone}`;
+  
+  const timeUntil = daysUntil > 0 
+    ? `${daysUntil}d ${hoursUntil}h ${minutesUntil}m`
+    : `${hoursUntil}h ${minutesUntil}m`;
   
   await say({
     text: `*📅 Competitive Intelligence Schedule*\n\n` +
       `• Next digest: ${nextRun.toLocaleString('en-US', { timeZone: schedule.timezone })}\n` +
-      `• Time until next run: ${hoursUntil}h ${minutesUntil}m\n` +
+      `• Time until next run: ${timeUntil}\n` +
       `• Target channel: #${COMPETITIVE_INTEL_CHANNEL}\n` +
       `• Competitors monitored: ${competitors.getCompetitorNames().length}\n` +
-      `• Schedule: Daily at ${schedule.time} ${schedule.timezone}`
+      `• Schedule: ${scheduleDesc}`
   });
 }
 
@@ -287,8 +297,14 @@ async function checkAndPostUrgentSignals() {
   await app.start();
   console.log('⚡ Prompt Bot is running (Socket Mode)');
   
+  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const scheduleDesc = schedule.frequency === 'weekly' 
+    ? `Weekly on ${dayNames[schedule.dayOfWeek]}s at ${schedule.time} ${schedule.timezone}`
+    : `Daily at ${schedule.time} ${schedule.timezone}`;
+  
   const schedulerInfo = startDailyScheduler(postDailyDigest);
   console.log(`📊 Competitive Intelligence Agent active`);
+  console.log(`   Schedule: ${scheduleDesc}`);
   console.log(`   Next digest: ${schedulerInfo.nextRun.toLocaleString()}`);
   console.log(`   Channel: #${schedulerInfo.channel}`);
   console.log(`   Monitoring ${competitors.getCompetitorNames().length} competitors`);

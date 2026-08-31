@@ -122,10 +122,11 @@ const sources = {
 };
 
 const schedule = {
-  frequency: 'daily',
+  frequency: 'weekly',
+  dayOfWeek: 1, // Monday (0=Sunday, 1=Monday, etc.)
   time: '08:00',
   timezone: 'America/New_York',
-  channel: 'competitive-intel'
+  channel: 'ai-industry-signals'
 };
 
 const signalTags = [
