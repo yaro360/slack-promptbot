@@ -102,7 +102,7 @@ const sources = {
     description: 'New reviews = product changes, churn signals'
   },
   reddit: {
-    enabled: false, // Requires OAuth credentials - re-enable when configured
+    enabled: true, // OAuth configured with TestSentiment app
     subreddits: ['Entrepreneur', 'ClickFunnels', 'SEO', 'digitalmarketing'],
     description: 'Community sentiment, complaints, feature requests'
   },
